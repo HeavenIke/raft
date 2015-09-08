@@ -3,6 +3,7 @@ package comm
 import (
 	"log"
 	"testing"
+	"time"
 )
 
 // type VoteArgs struct {
@@ -13,14 +14,18 @@ import (
 // }
 
 func TestRequestVote(t *testing.T) {
-	log.Println("start")
-	s := Sender{}
-	args := VoteArgs{}
-	rlt := VoteResult{}
-	err := s.RequestVote(":1234", args, &rlt)
-	if err != nil {
-		log.Fatalln("request vote error:", err)
+	i := 0
+	for {
+		log.Println("num:", i)
+		i++
+		s := Sender{}
+		args := VoteArgs{}
+		rlt := VoteResult{}
+		err := s.RequestVote(":1234", args, &rlt)
+		if err != nil {
+			log.Fatalln("request vote error:", err)
+		}
+		log.Println(rlt)
+		time.Sleep(4 * time.Second)
 	}
-	log.Println(rlt)
-	log.Println("over")
 }

@@ -16,7 +16,8 @@ const (
 type Raft struct {
 	localServ Server
 	others    []Server
-	listener  *comm.ListenService
+	listener  comm.Listener
+	sender    comm.Sender
 }
 
 type Server struct {
@@ -25,7 +26,8 @@ type Server struct {
 }
 
 func New(addr string) Raft {
-	return Raft{localServ: Server{Addr: addr, St: Follower}, listener: comm.NewListener(addr)}
+	return Raft{localServ: Server{Addr: addr, St: Follower},
+		listener: comm.NewListener(addr)}
 }
 
 func (r *Raft) Connect(addr string) error {
@@ -39,7 +41,8 @@ func (r *Raft) Connect(addr string) error {
 func (r *Raft) Run() {
 	r.listener.Run()
 	l := logic.New()
-	l.BindListenChan(r.listener)
+	l.Subscribe(r.listener)
+	l.Run()
 }
 
 func contains(others []Server, addr string) bool {

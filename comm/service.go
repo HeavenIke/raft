@@ -1,7 +1,5 @@
 package comm
 
-import "log"
-
 // type Listener struct {
 // 	DataChan
 // }
@@ -71,6 +69,11 @@ type Entry struct {
 	cmd int32
 }
 
+type DataChan struct {
+	Vc VoteChan
+	Ac AppEntryChan
+}
+
 type Service struct {
 	DataChan
 }
@@ -82,11 +85,16 @@ func NewService() *Service {
 	return s
 }
 
+func (dc DataChan) Close() {
+	close(dc.Vc.Args)
+	close(dc.Vc.Result)
+	close(dc.Ac.Args)
+	close(dc.Ac.Result)
+}
+
 func (r *Service) RequestVote(args *VoteArgs, result *VoteResult) error {
-	log.Println("RequestVote!!")
 	r.Vc.Args <- args
 	*result = *(<-r.Vc.Result)
-	log.Println("End RequestVote!!")
 	return nil
 }
 

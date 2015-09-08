@@ -6,15 +6,17 @@ import (
 )
 
 type Sender struct {
-	// SendChan map[string]DataChan
+	Addr []string
 }
 
 func (s *Sender) RequestVote(addr string, args VoteArgs, result *VoteResult) error {
-	return rpcRequest(addr, "Service.RequestVote", args, result)
+	err := rpcRequest(addr, "Service.RequestVote", args, result)
+	return err
 }
 
-func (s *Sender) AppendEntries(addr string, args AppEntryArgs, result *AppEntryResult) error {
-	return rpcRequest(addr, "Service.AppendEntries", args, result)
+func (s *Sender) AppEntries(addr string, args AppEntryArgs, result *AppEntryResult) error {
+	err := rpcRequest(addr, "Service.AppendEntries", args, result)
+	return err
 }
 
 func rpcRequest(addr string, method string, args interface{}, result interface{}) error {

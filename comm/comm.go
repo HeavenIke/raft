@@ -8,31 +8,27 @@ import (
 	"net/rpc"
 )
 
-type Data interface {
-	Type() int8
-	Serialise() interface{}
+type DataService interface {
+	GetDataChan() DataChan
 }
 
-type DataChan struct {
-	Vc VoteChan
-	Ac AppEntryChan
-}
-
-type ListenService struct {
-	DataChan
+type Listener struct {
 	Addr string
+	Serv *Service
 }
 
-func NewListener(addr string) *ListenService {
-	l := &ListenService{Addr: addr}
+func NewListener(addr string) Listener {
+	l := Listener{Addr: addr}
+	l.Serv = NewService()
 	return l
 }
 
-func (ls *ListenService) Run() {
-	serv := NewService()
-	ls.Ac = serv.Ac
-	ls.Vc = serv.Vc
-	rpc.Register(serv)
+func (ls Listener) GetDataChan() DataChan {
+	return DataChan{Vc: ls.Serv.Vc, Ac: ls.Serv.Ac}
+}
+
+func (ls *Listener) Run() {
+	rpc.Register(ls.Serv)
 	rpc.HandleHTTP()
 	log.Println("listen on", ls.Addr)
 	l, e := net.Listen("tcp", ls.Addr)
