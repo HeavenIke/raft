@@ -72,8 +72,18 @@ func (l *Logic) Subscribe(c comm.DataService) {
 func (l *Logic) Run() {
 	glog.Info("I'm ", RoleStr[l.localServ.Role])
 	l.tm = time.NewTimer(randomTime())
-	go l.StartTimer()
+	// start the timer
+	go func() {
+		for {
+			select {
+			case <-l.tm.C:
+				go l.electLeader()
+				l.tm.Reset(randomTime())
+			}
+		}
+	}()
 
+	// waiting for the args from data service
 	for {
 		d := <-l.ds.GetDataChan()
 		l.tm.Reset(randomTime())
@@ -81,20 +91,10 @@ func (l *Logic) Run() {
 	}
 }
 
-func (l *Logic) StartTimer() {
-	for {
-		select {
-		case <-l.tm.C:
-			go l.electLeader()
-			l.tm.Reset(randomTime())
-		}
-	}
-}
-
+// handle
 func (l *Logic) argsHandler(dc comm.DataChan) {
 	select {
 	case args := <-dc.Vc.Args:
-		// glog.Info("Recv Vote request:", args)
 		if args.Term < l.state.currentTerm {
 			// glog.Info("ignore vote requst with term:", args.Term, " current term is ", l.state.currentTerm)
 			return
@@ -123,14 +123,6 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 		}
 		dc.Ac.Result <- &comm.AppEntryResult{}
 	}
-}
-
-// Close the whole logic module
-func (l *Logic) Close() {
-	// err := l.sub.Close()
-	// if err != nil {
-	// 	glog.Info("Close error:", err)
-	// }
 }
 
 func (l *Logic) electLeader() {
@@ -284,4 +276,12 @@ func randomTime() time.Duration {
 func random(min, max int) int {
 	rand.Seed(time.Now().Unix())
 	return rand.Intn(max-min) + min
+}
+
+// Close the whole logic module
+func (l *Logic) Close() {
+	// err := l.sub.Close()
+	// if err != nil {
+	// 	glog.Info("Close error:", err)
+	// }
 }
