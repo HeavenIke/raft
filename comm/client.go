@@ -1,7 +1,6 @@
 package comm
 
 import (
-	"fmt"
 	"net/rpc"
 )
 
@@ -24,12 +23,9 @@ func rpcRequest(addr string, method string, args interface{}, result interface{}
 	if err != nil {
 		return err
 	}
-
 	err = client.Call(method, args, result)
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(result)
 	return nil
 }

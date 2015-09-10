@@ -20,6 +20,10 @@ type VoteChan struct {
 	Result chan *VoteResult
 }
 
+func NewDataChan() DataChan {
+	return DataChan{Vc: NewVoteChan(), Ac: NewAppEntryChan()}
+}
+
 func NewVoteChan() VoteChan {
 	vc := VoteChan{}
 	vc.Args = make(chan *VoteArgs)
@@ -66,7 +70,7 @@ type AppEntryResult struct {
 }
 
 type Entry struct {
-	cmd int32
+	Cmd int32
 }
 
 type DataChan struct {
@@ -75,14 +79,16 @@ type DataChan struct {
 }
 
 type Service struct {
-	DataChan
+	dcc chan DataChan
 }
 
-func NewService() *Service {
-	s := &Service{}
-	s.Vc = NewVoteChan()
-	s.Ac = NewAppEntryChan()
+func NewService(num int) *Service {
+	s := &Service{dcc: make(chan DataChan, num)}
 	return s
+}
+
+func (s Service) GetDataChan() <-chan DataChan {
+	return s.dcc
 }
 
 func (dc DataChan) Close() {
@@ -93,13 +99,19 @@ func (dc DataChan) Close() {
 }
 
 func (r *Service) RequestVote(args *VoteArgs, result *VoteResult) error {
-	r.Vc.Args <- args
-	*result = *(<-r.Vc.Result)
+	dc := NewDataChan()
+	r.dcc <- dc
+	dc.Vc.Args <- args
+	*result = *(<-dc.Vc.Result)
+	dc.Close()
 	return nil
 }
 
 func (r *Service) AppendEntries(args *AppEntryArgs, result *AppEntryResult) error {
-	r.Ac.Args <- args
-	*result = *(<-r.Ac.Result)
+	dc := NewDataChan()
+	r.dcc <- dc
+	dc.Ac.Args <- args
+	*result = *(<-dc.Ac.Result)
+	dc.Close()
 	return nil
 }

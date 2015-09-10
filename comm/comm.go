@@ -2,14 +2,15 @@
 package comm
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"net/rpc"
+
+	"github.com/golang/glog"
 )
 
 type DataService interface {
-	GetDataChan() DataChan
+	GetDataChan() <-chan DataChan
 }
 
 type Listener struct {
@@ -17,23 +18,27 @@ type Listener struct {
 	Serv *Service
 }
 
+const (
+	serviceNum = 5
+)
+
 func NewListener(addr string) Listener {
 	l := Listener{Addr: addr}
-	l.Serv = NewService()
+	l.Serv = NewService(serviceNum)
 	return l
 }
 
-func (ls Listener) GetDataChan() DataChan {
-	return DataChan{Vc: ls.Serv.Vc, Ac: ls.Serv.Ac}
+func (ls Listener) GetDataChan() <-chan DataChan {
+	return ls.Serv.GetDataChan()
 }
 
 func (ls *Listener) Run() {
 	rpc.Register(ls.Serv)
 	rpc.HandleHTTP()
-	log.Println("listen on", ls.Addr)
+	glog.Info("listen on", ls.Addr)
 	l, e := net.Listen("tcp", ls.Addr)
 	if e != nil {
-		log.Fatal("listern error:", e)
+		glog.Fatal("listern error:", e)
 	}
 	go http.Serve(l, nil)
 }
