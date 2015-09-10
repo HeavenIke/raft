@@ -1,1 +1,3 @@
-Raft
+#Raft
+
+Leader election is implemented.
