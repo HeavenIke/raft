@@ -20,7 +20,6 @@ type Logic struct {
 	others    []Server
 	state     State
 	cancelHB  chan int8
-	tmstop    chan bool
 	tm        *time.Timer
 }
 
@@ -54,8 +53,7 @@ func New(l Server, o []Server) *Logic {
 	return &Logic{localServ: l,
 		others:   o,
 		state:    State{currentTerm: 0, votedFor: 0},
-		cancelHB: make(chan int8),
-		tmstop:   make(chan bool)}
+		cancelHB: make(chan int8)}
 }
 
 func (s Server) GetCandidateId() (int, error) {
