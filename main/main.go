@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	"github.com/heavenike/raft"
+	"github.com/iketheadore/raft"
 )
 
 func main() {

@@ -3,8 +3,8 @@ package raft
 import (
 	"errors"
 
-	"github.com/heavenike/raft/comm"
-	"github.com/heavenike/raft/logic"
+	"github.com/iketheadore/raft/comm"
+	"github.com/iketheadore/raft/logic"
 )
 
 type Raft struct {

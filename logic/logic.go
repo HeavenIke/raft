@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/heavenike/raft/comm"
+	"github.com/iketheadore/raft/comm"
 )
 
 // logic control module
