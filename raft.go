@@ -35,10 +35,8 @@ func (r *Raft) Run() {
 	r.logic.Run()
 }
 
-func (r *Raft) AppendEntries(e []comm.Entry) {
-	for _, v := range e {
-		r.logic.EntryCh <- v
-	}
+func (r *Raft) ReplicateCmd(cmd comm.Command) {
+	r.logic.ReplicateCmd(cmd)
 }
 
 func contains(others []logic.Server, addr string) bool {

@@ -21,8 +21,8 @@ type Logic struct {
 	state           State
 	tm              *time.Timer
 	stopHeartbeatCh chan bool
-	closeLogEntryCh chan bool
-	EntryCh         chan comm.Entry
+	cmdCh           chan comm.Command
+	closeCmdCh      chan bool
 }
 
 type State struct {
@@ -45,8 +45,9 @@ const (
 )
 
 type Server struct {
-	Addr string
-	Role int8
+	Addr    string
+	Role    int8
+	Entries []comm.Entry
 }
 
 // create a logic instance
@@ -54,7 +55,9 @@ func New(l Server, o []Server) *Logic {
 	return &Logic{localServ: l,
 		others:          o,
 		state:           State{currentTerm: 0, votedFor: 0},
-		stopHeartbeatCh: make(chan bool)}
+		stopHeartbeatCh: make(chan bool),
+		cmdCh:           make(chan comm.Command),
+		closeCmdCh:      make(chan bool)}
 }
 
 func (s Server) GetCandidateId() (int, error) {
@@ -69,6 +72,9 @@ func (l *Logic) Subscribe(c comm.DataService) {
 
 // yeah! start the logic module.
 func (l *Logic) Run() {
+
+	go l.logReplication()
+
 	glog.Info("I'm ", RoleStr[l.localServ.Role])
 	l.tm = time.NewTimer(randomTime())
 	// start the timer
@@ -272,15 +278,35 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 	}
 }
 
-func (l *Logic) onRecvEntry() {
+// through the cmd to log replication channel, the reason of using channel to
+// recv the cmd is: this function can invoked concurrently.
+func (l *Logic) ReplicateCmd(cmd comm.Command) {
+	l.cmdCh <- cmd
+	// log the cmd to disk
+	// s := cmd.Serialise()
+	// l.cmdToDisk(s)
+	// e := comm.Entry{Cmd: s}
+	// l.localServ.Entries = append(l.localServ.Entries, e)
+}
+
+func (l *Logic) logReplication() {
 	for {
 		select {
-		case <-l.EntryCh:
-			// TODO: append the log entry to local logs
-		case <-l.closeLogEntryCh:
+		case cmd := <-l.cmdCh:
+			// write the log to disk
+			e := comm.Entry{Cmd: cmd.Serialise()}
+			l.cmdToDisk(e.Cmd)
+			l.localServ.Entries = append(l.localServ.Entries, e)
+			// generate AppEntryArgs
+
+		case <-l.closeCmdCh:
 			return
 		}
 	}
+}
+
+func (l *Logic) cmdToDisk(cmd string) {
+
 }
 
 func randomTime() time.Duration {

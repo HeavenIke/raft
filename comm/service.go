@@ -70,7 +70,12 @@ type AppEntryResult struct {
 }
 
 type Entry struct {
-	Cmd int32
+	Cmd string
+}
+
+type Command interface {
+	Serialise() string
+	UnSerialise(cmd string)
 }
 
 type DataChan struct {
