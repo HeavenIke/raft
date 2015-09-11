@@ -21,4 +21,6 @@ func main() {
 		r.Connect(s)
 	}
 	r.Run()
+	// c := make(chan int)
+	// <-c
 }

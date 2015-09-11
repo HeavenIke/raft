@@ -14,13 +14,15 @@ import (
 
 // logic control module
 type Logic struct {
-	ds        comm.DataService
-	sender    comm.Sender
-	localServ Server
-	others    []Server
-	state     State
-	cancelHB  chan int8
-	tm        *time.Timer
+	ds              comm.DataService
+	sender          comm.Sender
+	localServ       Server
+	others          []Server
+	state           State
+	tm              *time.Timer
+	stopHeartbeatCh chan bool
+	closeLogEntryCh chan bool
+	EntryCh         chan comm.Entry
 }
 
 type State struct {
@@ -37,7 +39,6 @@ const (
 var RoleStr = []string{"Follower", "Candidate", "Leader"}
 
 const (
-	HB_STOP = 0
 	TimeOut = 1000
 	LOW     = 300
 	HIGH    = 500
@@ -51,9 +52,9 @@ type Server struct {
 // create a logic instance
 func New(l Server, o []Server) *Logic {
 	return &Logic{localServ: l,
-		others:   o,
-		state:    State{currentTerm: 0, votedFor: 0},
-		cancelHB: make(chan int8)}
+		others:          o,
+		state:           State{currentTerm: 0, votedFor: 0},
+		stopHeartbeatCh: make(chan bool)}
 }
 
 func (s Server) GetCandidateId() (int, error) {
@@ -107,7 +108,7 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 			l.state.currentTerm = args.Term
 			if l.localServ.Role == Leader {
 				l.localServ.Role = Candidate
-				l.cancelHB <- HB_STOP
+				l.stopHeartbeatCh <- true
 			}
 		}
 
@@ -128,6 +129,7 @@ func (l *Logic) electLeader() {
 	l.localServ.Role = Candidate
 	l.state.votedFor = 0
 	glog.Info("I'm candidate, start to elect leader")
+
 	// log.Println("Send vote Request")
 	rltch := make(chan comm.VoteResult, len(l.others))
 	cid, err := l.localServ.GetCandidateId()
@@ -135,6 +137,10 @@ func (l *Logic) electLeader() {
 		glog.Info("failed to get candidate id of ", l.localServ.Addr)
 		return
 	}
+
+	// vote for self
+	l.state.votedFor = int32(cid)
+
 	args := comm.VoteArgs{Term: l.state.currentTerm, CandidateId: int32(cid)}
 	for _, s := range l.others {
 		go func(serv Server) {
@@ -180,7 +186,7 @@ func (l *Logic) heartBeat() {
 		select {
 		case <-time.After(time.Duration(LOW/2) * time.Millisecond):
 			l.sendHB()
-		case <-l.cancelHB:
+		case <-l.stopHeartbeatCh:
 			glog.Info("stop sending heartBeat")
 			return
 		}
@@ -212,13 +218,12 @@ func (l *Logic) sendHB() {
 				if len(rlts) <= (len(l.others) / 2) {
 					glog.Info("Not enough server in cluster, change role to candidate")
 					l.localServ.Role = Candidate
-					l.cancelHB <- HB_STOP
+					l.stopHeartbeatCh <- true
 					return
 				}
 			}
 		}
 	}()
-
 }
 
 func (l *Logic) vote(addr string, args comm.VoteArgs, tmout time.Duration) (comm.VoteResult, error) {
@@ -263,6 +268,17 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 			return v.rlt, v.err
 		case <-time.After(tmout * time.Millisecond):
 			return comm.AppEntryResult{}, errors.New("AppEntry time out")
+		}
+	}
+}
+
+func (l *Logic) onRecvEntry() {
+	for {
+		select {
+		case <-l.EntryCh:
+			// TODO: append the log entry to local logs
+		case <-l.closeLogEntryCh:
+			return
 		}
 	}
 }

@@ -12,6 +12,7 @@ type Raft struct {
 	others    []logic.Server
 	listener  comm.Listener
 	sender    comm.Sender
+	logic     *logic.Logic
 }
 
 func New(addr string) Raft {
@@ -29,9 +30,15 @@ func (r *Raft) Connect(addr string) error {
 
 func (r *Raft) Run() {
 	r.listener.Run()
-	l := logic.New(r.localServ, r.others)
-	l.Subscribe(r.listener)
-	l.Run()
+	r.logic = logic.New(r.localServ, r.others)
+	r.logic.Subscribe(r.listener)
+	r.logic.Run()
+}
+
+func (r *Raft) AppendEntries(e []comm.Entry) {
+	for _, v := range e {
+		r.logic.EntryCh <- v
+	}
 }
 
 func contains(others []logic.Server, addr string) bool {
