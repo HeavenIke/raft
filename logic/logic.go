@@ -320,8 +320,4 @@ func random(min, max int) int {
 
 // Close the whole logic module
 func (l *Logic) Close() {
-	// err := l.sub.Close()
-	// if err != nil {
-	// 	glog.Info("Close error:", err)
-	// }
 }
