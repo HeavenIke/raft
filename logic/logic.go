@@ -4,8 +4,6 @@ package logic
 import (
 	"errors"
 	"math/rand"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -23,6 +21,8 @@ type Logic struct {
 	stopHeartbeatCh chan bool
 	cmdCh           chan comm.Command
 	closeCmdCh      chan bool
+	logEntries      []comm.AppEntryArgs
+	currentLogIndex int32
 }
 
 type State struct {
@@ -39,16 +39,11 @@ const (
 var RoleStr = []string{"Follower", "Candidate", "Leader"}
 
 const (
-	TimeOut = 1000
-	LOW     = 300
-	HIGH    = 500
+	TimeOut    = 1000
+	LOW        = 300
+	HIGH       = 500
+	CMD_CH_LEN = 10
 )
-
-type Server struct {
-	Addr    string
-	Role    int8
-	Entries []comm.Entry
-}
 
 // create a logic instance
 func New(l Server, o []Server) *Logic {
@@ -56,13 +51,10 @@ func New(l Server, o []Server) *Logic {
 		others:          o,
 		state:           State{currentTerm: 0, votedFor: 0},
 		stopHeartbeatCh: make(chan bool),
-		cmdCh:           make(chan comm.Command),
-		closeCmdCh:      make(chan bool)}
-}
-
-func (s Server) GetCandidateId() (int, error) {
-	v := strings.SplitN(s.Addr, ":", 2)
-	return strconv.Atoi(v[1])
+		cmdCh:           make(chan comm.Command, CMD_CH_LEN),
+		closeCmdCh:      make(chan bool),
+		logEntries:      make([]comm.AppEntryArgs, 0, 0),
+		currentLogIndex: 0}
 }
 
 // subscribe services
@@ -138,7 +130,7 @@ func (l *Logic) electLeader() {
 
 	// log.Println("Send vote Request")
 	rltch := make(chan comm.VoteResult, len(l.others))
-	cid, err := l.localServ.GetCandidateId()
+	cid, err := l.localServ.GetId()
 	if err != nil {
 		glog.Info("failed to get candidate id of ", l.localServ.Addr)
 		return
@@ -273,7 +265,7 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 		case v := <-ch:
 			return v.rlt, v.err
 		case <-time.After(tmout * time.Millisecond):
-			return comm.AppEntryResult{}, errors.New("AppEntry time out")
+			return comm.AppEntryResult{}, errors.New("time out")
 		}
 	}
 }
@@ -296,7 +288,34 @@ func (l *Logic) logReplication() {
 			// write the log to disk
 			e := comm.Entry{Cmd: cmd.Serialise()}
 			l.cmdToDisk(e.Cmd)
-			l.localServ.Entries = append(l.localServ.Entries, e)
+
+			id, err := l.localServ.GetId()
+			if err != nil {
+				glog.Error("GetId failed")
+				continue
+			}
+			appArgs := comm.AppEntryArgs{
+				Term:     l.state.currentTerm,
+				LeaderId: int32(id)}
+			l.logEntries = append(l.logEntries, appArgs)
+
+			for _, s := range l.others {
+				s.AppEntry(appArgs)
+			}
+
+			// for _, serv := range l.others {
+			// 	// send AppendEntry to other severs
+			// 	go func(s Server) {
+			// 		rlt, err := l.appEntry(s.Addr, appArgs, time.Duration(LOW/2))
+			// 		if err != nil {
+			// 			glog.Error("send AppEntries failed, err:", err)
+			// 			break
+			// 		}
+			//
+			// 	}(serv)
+			// }
+
+			// l.entries = append(l.entries, e)
 			// generate AppEntryArgs
 
 		case <-l.closeCmdCh:
