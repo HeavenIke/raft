@@ -1,7 +1,7 @@
 #!/usr/local/bin/zsh
 go build
-cp main s1
-cp main s2
-cp main s3
-cp main s4
-cp main s5
+cp example s1
+cp example s2
+cp example s3
+cp example s4
+cp example s5

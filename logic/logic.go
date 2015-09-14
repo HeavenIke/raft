@@ -18,16 +18,22 @@ type Logic struct {
 	others          []Server
 	state           State
 	tm              *time.Timer
+	logRepTm        *time.Timer
 	stopHeartbeatCh chan bool
 	cmdCh           chan comm.Command
+	appArgCh        chan comm.AppEntryArgs
 	closeCmdCh      chan bool
+	closeAppCh      chan bool
 	logEntries      []comm.AppEntryArgs
-	currentLogIndex int32
 }
 
 type State struct {
 	currentTerm int32
 	votedFor    int32
+	commitIndex int32
+	lastApplied int32
+	nextIndex   map[int32]int32
+	matchIndex  map[int32]int32
 }
 
 const (
@@ -47,14 +53,24 @@ const (
 
 // create a logic instance
 func New(l Server, o []Server) *Logic {
+	nextIndex := make(map[int32]int32, len(o))
+	matchIndex := make(map[int32]int32, len(o))
+	for _, s := range o {
+		id, _ := s.GetId()
+		nextIndex[int32(id)] = int32(0)
+		matchIndex[int32(id)] = int32(0)
+	}
+	glog.Info(nextIndex)
+	glog.Info(matchIndex)
 	return &Logic{localServ: l,
 		others:          o,
-		state:           State{currentTerm: 0, votedFor: 0},
+		state:           State{currentTerm: 0, votedFor: 0, commitIndex: 0, lastApplied: 0, nextIndex: nextIndex, matchIndex: matchIndex},
 		stopHeartbeatCh: make(chan bool),
 		cmdCh:           make(chan comm.Command, CMD_CH_LEN),
+		appArgCh:        make(chan comm.AppEntryArgs),
 		closeCmdCh:      make(chan bool),
-		logEntries:      make([]comm.AppEntryArgs, 0, 0),
-		currentLogIndex: 0}
+		closeAppCh:      make(chan bool),
+		logEntries:      make([]comm.AppEntryArgs, 0, 0)}
 }
 
 // subscribe services
@@ -64,9 +80,6 @@ func (l *Logic) Subscribe(c comm.DataService) {
 
 // yeah! start the logic module.
 func (l *Logic) Run() {
-
-	go l.logReplication()
-
 	glog.Info("I'm ", RoleStr[l.localServ.Role])
 	l.tm = time.NewTimer(randomTime())
 	// start the timer
@@ -93,12 +106,12 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 	select {
 	case args := <-dc.Vc.Args:
 		if args.Term < l.state.currentTerm {
-			// glog.Info("ignore vote requst with term:", args.Term, " current term is ", l.state.currentTerm)
+			glog.Info("ignore vote requst with term:", args.Term, " current term is ", l.state.currentTerm)
 			return
 		}
 
 		if l.state.votedFor > 0 && args.Term == l.state.currentTerm {
-			// glog.Info("ignore vote requst with term:", args.Term, " has voted for ", l.state.votedFor)
+			glog.Info("ignore vote requst with term:", args.Term, " has voted for ", l.state.votedFor)
 			return
 		}
 
@@ -137,7 +150,7 @@ func (l *Logic) electLeader() {
 	}
 
 	// vote for self
-	l.state.votedFor = int32(cid)
+	// l.state.votedFor = int32(cid)
 
 	args := comm.VoteArgs{Term: l.state.currentTerm, CandidateId: int32(cid)}
 	for _, s := range l.others {
@@ -166,10 +179,11 @@ func (l *Logic) electLeader() {
 				l.localServ.Role = Leader
 				glog.Info("I'm leader, vote num:", len(rlts), " term:", l.state.currentTerm)
 				l.tm.Stop()
-				// start to send heatbeat to others
+				// start to send heatbeat or do log replication
 				go l.heartBeat()
+				go l.logReplication()
 			} else {
-				// glog.Info("not enouth vote:", len(rlts))
+				glog.Info("not enouth vote:", len(rlts))
 			}
 		case <-time.After(TimeOut * time.Millisecond):
 			return
@@ -273,6 +287,7 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 // through the cmd to log replication channel, the reason of using channel to
 // recv the cmd is: this function can invoked concurrently.
 func (l *Logic) ReplicateCmd(cmd comm.Command) {
+	glog.Info(l.cmdCh)
 	l.cmdCh <- cmd
 	// log the cmd to disk
 	// s := cmd.Serialise()
@@ -282,9 +297,25 @@ func (l *Logic) ReplicateCmd(cmd comm.Command) {
 }
 
 func (l *Logic) logReplication() {
+	go l.appEntryHandler()
+	// go func() {
+	// 	// monitor the server's appentry channel
+	// 	for _, s := range l.others {
+	// 		go func() {
+	// 			for {
+	// 				select {
+	// 				case <-s.AppEntryRltCh:
+	// 					// send commit
+	//
+	// 				}
+	// 			}
+	// 		}()
+	// 	}
+	// }()
 	for {
 		select {
 		case cmd := <-l.cmdCh:
+			glog.Info("recv cmd:", cmd)
 			// write the log to disk
 			e := comm.Entry{Cmd: cmd.Serialise()}
 			l.cmdToDisk(e.Cmd)
@@ -297,28 +328,50 @@ func (l *Logic) logReplication() {
 			appArgs := comm.AppEntryArgs{
 				Term:     l.state.currentTerm,
 				LeaderId: int32(id)}
-			l.logEntries = append(l.logEntries, appArgs)
 
-			for _, s := range l.others {
-				s.AppEntry(appArgs)
-			}
-
-			// for _, serv := range l.others {
-			// 	// send AppendEntry to other severs
-			// 	go func(s Server) {
-			// 		rlt, err := l.appEntry(s.Addr, appArgs, time.Duration(LOW/2))
-			// 		if err != nil {
-			// 			glog.Error("send AppEntries failed, err:", err)
-			// 			break
-			// 		}
-			//
-			// 	}(serv)
-			// }
-
-			// l.entries = append(l.entries, e)
-			// generate AppEntryArgs
-
+			appArgs.PrevLogIndex = int32(len(l.logEntries) - 2)
+			appArgs.PrevLogTerm = l.logEntries[appArgs.PrevLogIndex].Term
+			// l.logEntries = append(l.logEntries, appArgs)
+			go func() {
+				l.appArgCh <- appArgs
+			}()
 		case <-l.closeCmdCh:
+			return
+		}
+	}
+}
+
+func (l *Logic) appEntryHandler() {
+	for {
+		select {
+		case arg := <-l.appArgCh:
+			l.logEntries = append(l.logEntries, arg)
+		case <-l.logRepTm.C:
+			// for _, s := range l.others {
+			// id, _ := s.GetId()
+			// glog.Info("id:", id)
+			// glog.Info("nextIndex:", l.state.nextIndex)
+			// logIndex := l.state.nextIndex[int32(id)]
+			// if logIndex < int32(len(l.logEntries)) {
+			// 	arg := l.logEntries[logIndex]
+			// 	arg.Term = l.state.currentTerm
+			// 	rlt, err := l.appEntry(s.Addr, arg, time.Duration(LOW/2))
+			// 	if err != nil {
+			// 		glog.Error(err)
+			// 		continue
+			// 	}
+			// 	if rlt.Success {
+			// 		l.state.matchIndex[int32(id)] = logIndex
+			// 		l.state.nextIndex[int32(id)] = logIndex + 1
+			// 	} else {
+			// 		l.state.nextIndex[int32(id)] = logIndex - 1
+			// 	}
+			// } else {
+			// 	// send heart beat, or maybe do nothing.
+			// }
+			// }
+			l.logRepTm.Reset(time.Duration(LOW/2) * time.Millisecond)
+		case <-l.closeAppCh:
 			return
 		}
 	}
@@ -339,4 +392,5 @@ func random(min, max int) int {
 
 // Close the whole logic module
 func (l *Logic) Close() {
+	l.closeCmdCh <- true
 }

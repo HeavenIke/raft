@@ -3,6 +3,7 @@ package raft
 import (
 	"errors"
 
+	"github.com/golang/glog"
 	"github.com/iketheadore/raft/comm"
 	"github.com/iketheadore/raft/logic"
 )
@@ -31,6 +32,7 @@ func (r *Raft) Connect(addr string) error {
 func (r *Raft) Run() {
 	r.listener.Run()
 	r.logic = logic.New(r.localServ, r.others)
+	glog.Info("after new logic")
 	r.logic.Subscribe(r.listener)
 	r.logic.Run()
 }
