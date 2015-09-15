@@ -57,13 +57,6 @@ const (
 
 // create a logic instance
 func New(l Server) *Logic {
-	// nextIndex := make(map[int32]int32, len(o))
-	// matchIndex := make(map[int32]int32, len(o))
-	// for _, s := range o {
-	// 	id, _ := s.GetId()
-	// 	nextIndex[int32(id)] = int32(0)
-	// 	matchIndex[int32(id)] = int32(0)
-	// }
 	log := &Logic{localServ: l,
 		state:           State{nextIndex: make(map[int32]int32), matchIndex: make(map[int32]int32)},
 		stopHeartbeatCh: make(chan bool),
@@ -141,6 +134,7 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 		}
 
 		l.state.votedFor = args.CandidateId
+		l.tm.Reset(randomTime())
 		dc.Vc.Result <- &comm.VoteResult{Term: args.Term, VoteGranted: true}
 	case args := <-dc.Ac.Args:
 		if len(args.Entries) == 0 {
