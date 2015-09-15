@@ -9,18 +9,6 @@ import (
 	"github.com/iketheadore/raft"
 )
 
-type command struct {
-	cmd string
-}
-
-func (cmd command) Serialise() string {
-	return cmd.cmd
-}
-
-func (cmd command) UnSerialise(s string) {
-	cmd.cmd = s
-}
-
 func main() {
 	listen := flag.String("L", ":1234", "listen address")
 	dst := flag.String("D", ":2345,:3456,:4567,:5678", "the others address")
@@ -40,7 +28,7 @@ func main() {
 	time.Sleep(3 * time.Second)
 	// // for testing
 	// go func() {
-	// 	cmd1 := command{"aaaa"}
+	// cmd1 := command{"aaaa"}
 	// 	r.ReplicateCmd(cmd1)
 	// 	cmd2 := command{"bbbb"}
 	// 	r.ReplicateCmd(cmd2)

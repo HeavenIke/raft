@@ -70,7 +70,8 @@ type AppEntryResult struct {
 }
 
 type Entry struct {
-	Cmd string
+	Term int32
+	Cmd  string
 }
 
 type Command interface {
