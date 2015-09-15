@@ -21,14 +21,7 @@ func New(addr string) *Raft {
 }
 
 func (r *Raft) Connect(addr string) error {
-	// if contains(r.others, addr) {
-	// 	return errors.New("duplicate addr:" + addr)
-	// }
 	return r.logic.Connect(logic.Server{Addr: addr, Role: logic.Follower})
-	// r.others = append(r.others, logic.Server{Addr: addr, Role: logic.Follower})
-	// glog.Info("other len:", len(r.others))
-	// glog.Info(r.others)
-	// return nil
 }
 
 func (r *Raft) Run() {
