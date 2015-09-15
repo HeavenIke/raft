@@ -58,7 +58,7 @@ const (
 // create a logic instance
 func New(l Server) *Logic {
 	log := &Logic{localServ: l,
-		state:           State{nextIndex: make(map[int32]int32), matchIndex: make(map[int32]int32)},
+		state:           State{nextIndex: make(map[int32]int32), matchIndex: make(map[int32]int32), commitIndex: -1},
 		stopHeartbeatCh: make(chan bool),
 		cmdCh:           make(chan comm.Command, CMD_CH_LEN),
 		closeCmdCh:      make(chan bool),
@@ -194,11 +194,19 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 }
 
 func (l *Logic) electLeader() {
+	glog.Info("I'm candidate, start to elect leader")
+
 	l.state.currentTerm++
 	glog.Info("Term:", l.state.currentTerm)
 	l.localServ.Role = Candidate
+
+	// reinitialize
 	l.state.votedFor = 0
-	glog.Info("I'm candidate, start to elect leader")
+	for _, s := range l.others {
+		id, _ := s.GetId()
+		l.state.matchIndex[int32(id)] = 0
+		l.state.nextIndex[int32(id)] = int32(len(l.logEntries))
+	}
 
 	// log.Println("Send vote Request")
 	rltch := make(chan comm.VoteResult, len(l.others))
@@ -317,6 +325,10 @@ func (l *Logic) logReplication() {
 		select {
 		case <-l.logRepTm.C:
 			glog.Info("logRepTimer")
+			if l.canCommit(l.state.commitIndex + 1) {
+				l.state.commitIndex++
+			}
+
 			for _, serv := range l.others {
 				leaderid, _ := l.localServ.GetId()
 				go func(s Server) {
@@ -452,6 +464,15 @@ func (l *Logic) AppLogTest() {
 	}
 }
 
-func (l Logic) GetMatchedNum() {
+func (l Logic) matchedNumof(index int32) (num int32) {
+	for _, v := range l.state.matchIndex {
+		if v >= index && l.logEntries[v].Term == l.state.currentTerm {
+			num++
+		}
+	}
+	return
+}
 
+func (l Logic) canCommit(index int32) bool {
+	return int(l.matchedNumof(index)) > (len(l.others) / 2)
 }
