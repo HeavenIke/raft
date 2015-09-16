@@ -2,8 +2,12 @@
 package logic
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"strconv"
 	"time"
 
@@ -29,6 +33,7 @@ type Logic struct {
 	closeCmdCh      chan bool
 	closeLogRepCh   chan bool
 	logEntries      []comm.Entry
+	file            *os.File
 }
 
 type State struct {
@@ -63,8 +68,11 @@ func New(l Server) *Logic {
 		cmdCh:           make(chan comm.Command, CMD_CH_LEN),
 		closeCmdCh:      make(chan bool),
 		closeLogRepCh:   make(chan bool),
-		logEntries:      make([]comm.Entry, 0, 0)}
+		logEntries:      make([]comm.Entry, 0, 0),
+		file:            nil}
 
+	// load log entry from disk
+	log.loadLogEntry("logentry.data")
 	go log.recvCmd()
 	return log
 }
@@ -186,6 +194,7 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 
 				if args.LeaderCommit > l.state.commitIndex {
 					l.state.commitIndex = int32(min(int(args.LeaderCommit), len(l.logEntries)-1))
+					glog.Info("commitIndex:", l.state.commitIndex)
 				}
 				dc.Ac.Result <- &comm.AppEntryResult{Term: l.state.currentTerm, Success: true}
 			}
@@ -312,7 +321,7 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 	}
 }
 
-// through the cmd to log replication channel, the reason of using channel to
+// send the cmd to log replication channel, the reason of using channel to
 // recv the cmd is: this function can invoked concurrently.
 func (l *Logic) ReplicateCmd(cmd comm.Command) {
 	glog.Info(l.cmdCh)
@@ -325,6 +334,7 @@ func (l *Logic) logReplication() {
 		select {
 		case <-l.logRepTm.C:
 			glog.Info("logRepTimer")
+			glog.Info("current commitIndex:", l.state.commitIndex)
 			if l.canCommit(l.state.commitIndex + 1) {
 				l.state.commitIndex++
 			}
@@ -397,7 +407,7 @@ func (l *Logic) recvCmd() {
 			glog.Info("recv cmd:", cmd)
 			// write the log to disk
 			entry := comm.Entry{Cmd: cmd.Serialise(), Term: l.state.currentTerm}
-			l.cmdToDisk(entry.Cmd)
+			l.entryToDisk(entry, "logentry.data")
 			l.logEntries = append(l.logEntries, entry)
 		case <-l.closeCmdCh:
 			return
@@ -405,8 +415,24 @@ func (l *Logic) recvCmd() {
 	}
 }
 
-func (l *Logic) cmdToDisk(cmd string) {
+func (l *Logic) entryToDisk(entry comm.Entry, filename string) {
+	glog.Info("log to disk")
+	if l.file == nil {
+		f, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0600)
+		if err != nil {
+			glog.Error(err)
+			return
+		}
+		l.file = f
+	}
 
+	data, err := entry.Serialise()
+	if err != nil {
+		glog.Info("failed to serialise of entry:", entry)
+		return
+	}
+	glog.Info(string(data))
+	l.file.WriteString(data + "\n")
 }
 
 func randomTime() time.Duration {
@@ -421,6 +447,9 @@ func random(min, max int) int {
 
 // Close the whole logic module
 func (l *Logic) Close() {
+	if l.file != nil {
+		l.file.Close()
+	}
 	l.closeCmdCh <- true
 	l.closeLogRepCh <- true
 }
@@ -455,12 +484,40 @@ func (cmd command) UnSerialise(s string) {
 }
 
 func (l *Logic) AppLogTest() {
-	i := 0
-	for {
+	for i := 0; i < 10; i++ {
 		cmd := command{"+" + strconv.Itoa(i)}
-		i++
 		l.ReplicateCmd(cmd)
 		time.Sleep(time.Second)
+	}
+}
+
+func (l *Logic) loadLogEntry(filename string) {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		glog.Info(err)
+		return
+	}
+	buf := bytes.NewBuffer(data)
+	reader := bufio.NewReader(buf)
+	var line string
+	for {
+		data, prefix, err := reader.ReadLine()
+		if err != nil {
+			break
+		}
+		line = line + string(data)
+		if !prefix {
+			glog.Info(line)
+			// lines = append(lines, line)
+			entry := comm.Entry{}
+			err := entry.UnSerialise(line)
+			line = ""
+			if err != nil {
+				glog.Error("failed to un serialise log entry:", err)
+				continue
+			}
+			l.logEntries = append(l.logEntries, entry)
+		}
 	}
 }
 
@@ -474,5 +531,7 @@ func (l Logic) matchedNumof(index int32) (num int32) {
 }
 
 func (l Logic) canCommit(index int32) bool {
-	return int(l.matchedNumof(index)) > (len(l.others) / 2)
+	// check whether the matched number plus self are the majority.
+	glog.Info("index:", index)
+	return int(l.matchedNumof(index))+1 > (len(l.others) / 2)
 }
