@@ -287,13 +287,11 @@ func (l *Logic) vote(addr string, args comm.VoteArgs, tmout time.Duration) (comm
 		}{rlt, err}
 	}()
 
-	for {
-		select {
-		case v := <-ch:
-			return v.rlt, v.err
-		case <-time.After(tmout * time.Millisecond):
-			return comm.VoteResult{}, errors.New("time out")
-		}
+	select {
+	case v := <-ch:
+		return v.rlt, v.err
+	case <-time.After(tmout * time.Millisecond):
+		return comm.VoteResult{}, errors.New("time out")
 	}
 }
 
@@ -311,13 +309,11 @@ func (l *Logic) appEntry(addr string, args comm.AppEntryArgs, tmout time.Duratio
 		}{rlt, err}
 	}()
 
-	for {
-		select {
-		case v := <-ch:
-			return v.rlt, v.err
-		case <-time.After(tmout * time.Millisecond):
-			return comm.AppEntryResult{}, errors.New("time out")
-		}
+	select {
+	case v := <-ch:
+		return v.rlt, v.err
+	case <-time.After(tmout * time.Millisecond):
+		return comm.AppEntryResult{}, errors.New("time out")
 	}
 }
 
