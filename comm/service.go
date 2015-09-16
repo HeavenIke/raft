@@ -1,5 +1,7 @@
 package comm
 
+import "encoding/json"
+
 // type Listener struct {
 // 	DataChan
 // }
@@ -72,6 +74,15 @@ type AppEntryResult struct {
 type Entry struct {
 	Term int32
 	Cmd  string
+}
+
+func (e Entry) Serialise() (string, error) {
+	data, err := json.Marshal(&e)
+	return string(data), err
+}
+
+func (e *Entry) UnSerialise(data string) error {
+	return json.Unmarshal([]byte(data), e)
 }
 
 type Command interface {
