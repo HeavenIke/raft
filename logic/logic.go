@@ -72,7 +72,7 @@ func New(l Server) *Logic {
 		file:            nil}
 
 	// load log entry from disk
-	log.loadLogEntry("logentry.data")
+	// log.loadLogEntry("logentry.data")
 	go log.recvCmd()
 	return log
 }
@@ -403,7 +403,7 @@ func (l *Logic) recvCmd() {
 			glog.Info("recv cmd:", cmd)
 			// write the log to disk
 			entry := comm.Entry{Cmd: cmd.Serialise(), Term: l.state.currentTerm}
-			l.entryToDisk(entry, "logentry.data")
+			// l.entryToDisk(entry, "logentry.data")
 			l.logEntries = append(l.logEntries, entry)
 		case <-l.closeCmdCh:
 			return
