@@ -37,12 +37,12 @@ type Logic struct {
 }
 
 type State struct {
-	currentTerm int32
-	votedFor    int32
-	commitIndex int32
-	lastApplied int32
-	nextIndex   map[int32]int32
-	matchIndex  map[int32]int32
+	currentTerm int
+	votedFor    int
+	commitIndex int
+	lastApplied int
+	nextIndex   map[int]int
+	matchIndex  map[int]int
 }
 
 const (
@@ -63,7 +63,7 @@ const (
 // create a logic instance
 func New(l Server) *Logic {
 	log := &Logic{localServ: l,
-		state:           State{nextIndex: make(map[int32]int32), matchIndex: make(map[int32]int32), commitIndex: -1},
+		state:           State{nextIndex: make(map[int]int), matchIndex: make(map[int]int), commitIndex: -1},
 		stopHeartbeatCh: make(chan bool),
 		cmdCh:           make(chan comm.Command, CMD_CH_LEN),
 		closeCmdCh:      make(chan bool),
@@ -111,8 +111,8 @@ func (l *Logic) Connect(s Server) error {
 	}
 	l.others = append(l.others, s)
 	id, _ := s.GetId()
-	l.state.nextIndex[int32(id)] = int32(0)
-	l.state.matchIndex[int32(id)] = int32(0)
+	l.state.nextIndex[id] = 0
+	l.state.matchIndex[id] = 0
 	return nil
 }
 
@@ -193,7 +193,7 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 				}
 
 				if args.LeaderCommit > l.state.commitIndex {
-					l.state.commitIndex = int32(min(int(args.LeaderCommit), len(l.logEntries)-1))
+					l.state.commitIndex = min(int(args.LeaderCommit), len(l.logEntries)-1)
 					glog.Info("commitIndex:", l.state.commitIndex)
 				}
 				dc.Ac.Result <- &comm.AppEntryResult{Term: l.state.currentTerm, Success: true}
@@ -213,8 +213,8 @@ func (l *Logic) electLeader() {
 	l.state.votedFor = 0
 	for _, s := range l.others {
 		id, _ := s.GetId()
-		l.state.matchIndex[int32(id)] = 0
-		l.state.nextIndex[int32(id)] = int32(len(l.logEntries))
+		l.state.matchIndex[id] = 0
+		l.state.nextIndex[id] = len(l.logEntries)
 	}
 
 	// log.Println("Send vote Request")
@@ -227,10 +227,10 @@ func (l *Logic) electLeader() {
 
 	rlts := make([]comm.VoteResult, 0, 0)
 	// vote for self
-	l.state.votedFor = int32(cid)
+	l.state.votedFor = cid
 	rlts = append(rlts, comm.VoteResult{})
 
-	args := comm.VoteArgs{Term: l.state.currentTerm, CandidateId: int32(cid)}
+	args := comm.VoteArgs{Term: l.state.currentTerm, CandidateId: cid}
 	for _, s := range l.others {
 		go func(serv Server) {
 			rlt, err := l.vote(serv.Addr, args, time.Duration(LOW))
@@ -340,10 +340,10 @@ func (l *Logic) logReplication() {
 				go func(s Server) {
 					id, _ := s.GetId()
 					glog.Info("id:", id)
-					nxtIndex := l.state.nextIndex[int32(id)]
-					if 0 <= nxtIndex && nxtIndex < int32(len(l.logEntries)) {
+					nxtIndex := l.state.nextIndex[id]
+					if 0 <= nxtIndex && nxtIndex < len(l.logEntries) {
 						entry := l.logEntries[nxtIndex]
-						prevTerm := int32(0)
+						prevTerm := 0
 						if nxtIndex <= 0 {
 							prevTerm = -1
 						} else {
@@ -354,7 +354,7 @@ func (l *Logic) logReplication() {
 						entries = append(entries, entry)
 						arg := comm.AppEntryArgs{
 							Term:         l.state.currentTerm,
-							LeaderId:     int32(leaderid),
+							LeaderId:     leaderid,
 							PrevLogIndex: nxtIndex - 1,
 							PrevLogTerm:  prevTerm,
 							Entries:      entries,
@@ -366,17 +366,17 @@ func (l *Logic) logReplication() {
 						}
 						if rlt.Success {
 							glog.Info("log rep to ", s.Addr, " success")
-							l.state.matchIndex[int32(id)] = nxtIndex
-							l.state.nextIndex[int32(id)] = nxtIndex + 1
-							glog.Info("move next index of ", s.Addr, " index:", l.state.nextIndex[int32(id)])
+							l.state.matchIndex[id] = nxtIndex
+							l.state.nextIndex[id] = nxtIndex + 1
+							glog.Info("move next index of ", s.Addr, " index:", l.state.nextIndex[id])
 						} else {
 							glog.Info("log rep to ", s.Addr, " failed")
 							if rlt.Term > l.state.currentTerm {
 								glog.Info("current term < ", s.Addr, "'s term'")
 								return
 							}
-							l.state.nextIndex[int32(id)] = nxtIndex - 1
-							glog.Info("set back index of ", s.Addr, " index:", l.state.nextIndex[int32(id)])
+							l.state.nextIndex[id] = nxtIndex - 1
+							glog.Info("set back index of ", s.Addr, " index:", l.state.nextIndex[id])
 						}
 					} else {
 						// send heart beat, or maybe do nothing.
@@ -402,8 +402,8 @@ func (l *Logic) recvCmd() {
 		case cmd := <-l.cmdCh:
 			glog.Info("recv cmd:", cmd)
 			// write the log to disk
-			entry := comm.Entry{Cmd: cmd.Serialise(), Term: l.state.currentTerm}
-			// l.entryToDisk(entry, "logentry.data")
+			entry := comm.Entry{Cmd: cmd.Serialise(), Term: l.state.currentTerm, LogIndex: len(l.logEntries)}
+			l.entryToDisk(entry, "logentry.data")
 			l.logEntries = append(l.logEntries, entry)
 		case <-l.closeCmdCh:
 			return
@@ -507,17 +507,21 @@ func (l *Logic) loadLogEntry(filename string) {
 			// lines = append(lines, line)
 			entry := comm.Entry{}
 			err := entry.UnSerialise(line)
-			line = ""
 			if err != nil {
 				glog.Error("failed to un serialise log entry:", err)
 				continue
 			}
-			l.logEntries = append(l.logEntries, entry)
+			line = ""
+			if entry.LogIndex < len(l.logEntries) {
+				l.logEntries[entry.LogIndex] = entry
+			} else {
+				l.logEntries = append(l.logEntries, entry)
+			}
 		}
 	}
 }
 
-func (l Logic) matchedNumof(index int32) (num int32) {
+func (l Logic) matchedNumof(index int) (num int) {
 	for _, v := range l.state.matchIndex {
 		if v >= index && l.logEntries[v].Term == l.state.currentTerm {
 			num++
@@ -526,7 +530,7 @@ func (l Logic) matchedNumof(index int32) (num int32) {
 	return
 }
 
-func (l Logic) canCommit(index int32) bool {
+func (l Logic) canCommit(index int) bool {
 	// check whether the matched number plus self are the majority.
 	glog.Info("index:", index)
 	return int(l.matchedNumof(index))+1 > (len(l.others) / 2)
