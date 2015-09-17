@@ -72,7 +72,7 @@ func New(l Server) *Logic {
 		file:            nil}
 
 	// load log entry from disk
-	// log.loadLogEntry("logentry.data")
+	log.loadLogEntry("logentry.data")
 	go log.recvCmd()
 	return log
 }
@@ -190,6 +190,7 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 				// append the entries to local server
 				for _, e := range args.Entries {
 					l.logEntries = append(l.logEntries, e)
+					l.entryToDisk(e)
 				}
 
 				if args.LeaderCommit > l.state.commitIndex {
@@ -403,7 +404,7 @@ func (l *Logic) recvCmd() {
 			glog.Info("recv cmd:", cmd)
 			// write the log to disk
 			entry := comm.Entry{Cmd: cmd.Serialise(), Term: l.state.currentTerm, LogIndex: len(l.logEntries)}
-			l.entryToDisk(entry, "logentry.data")
+			l.entryToDisk(entry)
 			l.logEntries = append(l.logEntries, entry)
 		case <-l.closeCmdCh:
 			return
@@ -411,10 +412,10 @@ func (l *Logic) recvCmd() {
 	}
 }
 
-func (l *Logic) entryToDisk(entry comm.Entry, filename string) {
+func (l *Logic) entryToDisk(entry comm.Entry) {
 	glog.Info("log to disk")
 	if l.file == nil {
-		f, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0600)
+		f, err := os.OpenFile("logentry.data", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 		if err != nil {
 			glog.Error(err)
 			return
