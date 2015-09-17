@@ -46,34 +46,35 @@ func NewAppEntryChan() AppEntryChan {
 }
 
 type VoteArgs struct {
-	Term         int32
-	CandidateId  int32
-	LastLogIndex int32
-	LastLogTerm  int32
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 type VoteResult struct {
-	Term        int32
+	Term        int
 	VoteGranted bool
 }
 
 type AppEntryArgs struct {
-	Term         int32
-	LeaderId     int32
-	PrevLogIndex int32
-	PrevLogTerm  int32
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
 	Entries      []Entry
-	LeaderCommit int32
+	LeaderCommit int
 }
 
 type AppEntryResult struct {
-	Term    int32
+	Term    int
 	Success bool
 }
 
 type Entry struct {
-	Term int32
-	Cmd  string
+	Term     int
+	LogIndex int
+	Cmd      string
 }
 
 func (e Entry) Serialise() (string, error) {
