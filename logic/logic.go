@@ -355,8 +355,20 @@ func (l *Logic) logReplication() {
 		case <-l.logRepTm.C:
 			glog.Info("logRepTimer")
 			glog.Info("current commitIndex:", l.state.commitIndex)
-			if l.canCommit(l.state.commitIndex + 1) {
-				l.state.commitIndex++
+			// TODO: there is bug in learning the leader's commit id.
+			if l.state.commitIndex == -1 {
+				index, err := getFirstIndexOfTerm(&l.logEntries, l.state.currentTerm)
+				if err == nil {
+					if l.canCommit(index) {
+						l.state.commitIndex = index
+					}
+				} else {
+					glog.Info(err)
+				}
+			} else {
+				if l.canCommit(l.state.commitIndex + 1) {
+					l.state.commitIndex++
+				}
 			}
 
 			for _, serv := range l.others {
@@ -558,4 +570,17 @@ func (l Logic) canCommit(index int) bool {
 	// check whether the matched number plus self are the majority.
 	glog.Info("index:", index)
 	return int(l.matchedNumof(index))+1 > (len(l.others) / 2)
+}
+
+func getFirstIndexOfTerm(entries *[]comm.Entry, term int) (int, error) {
+	if len(*entries) <= 0 {
+		return -1, errors.New("emptry log entries")
+	} else {
+		for i, v := range *entries {
+			if v.Term == term {
+				return i, nil
+			}
+		}
+	}
+	return -1, errors.New("no log entry of the specific term")
 }
