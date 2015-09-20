@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"strings"
-	"time"
 
 	"github.com/golang/glog"
 	"github.com/iketheadore/raft"
@@ -21,21 +20,5 @@ func main() {
 		glog.Info("connect ", s)
 		r.Connect(s)
 	}
-	go func() {
-		r.Run()
-	}()
-
-	time.Sleep(3 * time.Second)
-	// // for testing
-	// go func() {
-	// cmd1 := command{"aaaa"}
-	// 	r.ReplicateCmd(cmd1)
-	// 	cmd2 := command{"bbbb"}
-	// 	r.ReplicateCmd(cmd2)
-	// 	cmd3 := command{"cccc"}
-	// 	r.ReplicateCmd(cmd3)
-	// }()
-	//
-	c := make(chan bool)
-	<-c
+	r.Run()
 }
