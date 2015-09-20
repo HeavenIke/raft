@@ -126,8 +126,8 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 			dc.Vc.Result <- &comm.VoteResult{Term: args.Term, VoteGranted: false}
 			return
 		}
-
-		if l.state.votedFor > 0 && args.Term == l.state.currentTerm {
+		id, _ := l.localServ.GetId()
+		if l.state.votedFor > 0 && l.state.votedFor != id && args.Term == l.state.currentTerm {
 			glog.Info("ignore vote requst with term:", args.Term, " has voted for ", l.state.votedFor)
 			dc.Vc.Result <- &comm.VoteResult{Term: args.Term, VoteGranted: false}
 			return
@@ -138,6 +138,20 @@ func (l *Logic) argsHandler(dc comm.DataChan) {
 			if l.localServ.Role == Leader {
 				l.localServ.Role = Candidate
 				l.stopHeartbeatCh <- true
+			}
+		}
+		if len(l.logEntries) > 0 {
+			lastLog := l.logEntries[len(l.logEntries)-1]
+			if args.LastLogTerm < lastLog.Term {
+				glog.Info("ignore vote request with last term:", args.LastLogTerm, " cause local last term is ", lastLog.Term)
+				dc.Vc.Result <- &comm.VoteResult{Term: args.Term, VoteGranted: false}
+				return
+			} else if args.LastLogTerm == lastLog.Term {
+				if args.LastLogIndex < len(l.logEntries)-1 {
+					glog.Info("ignore vote request, cause the args's last log index is less than local server's last log index")
+					dc.Vc.Result <- &comm.VoteResult{Term: args.Term, VoteGranted: false}
+					return
+				}
 			}
 		}
 
@@ -231,7 +245,16 @@ func (l *Logic) electLeader() {
 	l.state.votedFor = cid
 	rlts = append(rlts, comm.VoteResult{})
 
-	args := comm.VoteArgs{Term: l.state.currentTerm, CandidateId: cid}
+	lastLogIndex := len(l.logEntries) - 1
+	lastLogTerm := -1
+	if len(l.logEntries) > 0 {
+		lastLogTerm = l.logEntries[lastLogIndex].Term
+	}
+	args := comm.VoteArgs{
+		Term:         l.state.currentTerm,
+		CandidateId:  cid,
+		LastLogIndex: lastLogIndex,
+		LastLogTerm:  lastLogTerm}
 	for _, s := range l.others {
 		go func(serv Server) {
 			rlt, err := l.vote(serv.Addr, args, time.Duration(LOW))
