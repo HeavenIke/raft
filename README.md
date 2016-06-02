@@ -1,6 +1,9 @@
 #Raft
 
-Leader election is implemented.
+## Implemented features
+1. leader election
+2. log replication
 
-#Usage:
-You can find the usage in the example directory.
+## Usage
+
+Get the usage from example directory.
